@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>[hidden]{display:none!important}html,body{margin:0}</style>
+<title>Prototype Autobattler Chibi</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+  /* Concept : une table de jeu sombre. Le plateau 5 x 10 occupe le centre, la main de cinq cartes est posée en bas, l'adversaire est en haut sous le brouillard. */
+  :root {
+    --bg: #100e17;
+    --panel: #191625;
+    --panel-2: #221e32;
+    --line: #2f2a45;
+    --fg: #ece6d6;
+    --muted: #9d96b1;
+    --ally: #5aa7ff;
+    --enemy: #ea5b52;
+    --gold: #dcae4a;
+    --gold-ink: #241a05;
+    --good: #6fbf86;
+    --font-display: 'Cinzel', Georgia, 'Times New Roman', serif;
+    --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 14px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .app {
+    height: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-block: 8px;
+  }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .round { font-family: var(--font-display); font-weight: 700; font-size: 18px; letter-spacing: 0.04em; }
+  .phase { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 8px; font-size: 13px; }
+  .iconbtn {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--line); font-weight: 600;
+  }
+
+  .stats { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 10px; align-items: center; }
+  .side { display: flex; align-items: center; gap: 6px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .side.enemy { justify-content: flex-end; }
+  .side .who.ally { color: var(--ally); }
+  .side .who.enemy { color: var(--enemy); }
+  .pips { display: inline-flex; gap: 4px; }
+  .pip { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--muted); }
+  .pip.on.ally { background: var(--ally); border-color: var(--ally); }
+  .pip.on.enemy { background: var(--enemy); border-color: var(--enemy); }
+  .res { text-align: center; font-variant-numeric: tabular-nums; }
+  .res b { font-size: 16px; font-weight: 600; }
+  .res small { color: var(--muted); display: block; font-size: 11px; }
+  .bar { height: 4px; background: var(--panel-2); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--gold); }
+
+  .board { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; border-radius: 10px; border: 1px solid var(--line); touch-action: manipulation; }
+  .overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 8, 16, 0.7); border-radius: 10px; padding: 16px;
+  }
+  .overlay .box {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; text-align: center; max-width: 320px; display: grid; gap: 10px;
+  }
+  .overlay h2 { margin: 0; font-family: var(--font-display); font-size: 22px; letter-spacing: 0.04em; text-wrap: balance; }
+  .overlay p { margin: 0; color: var(--muted); line-height: 1.5; }
+
+  .status { min-height: 2.8em; color: var(--muted); font-size: 13px; line-height: 1.4; display: flex; align-items: center; }
+
+  .actions { display: flex; gap: 8px; }
+  .btn {
+    min-height: 40px; padding: 0 14px; border-radius: 10px;
+    background: var(--panel); border: 1px solid var(--line); font-weight: 600;
+  }
+  .btn.primary { background: var(--gold); border-color: var(--gold); color: var(--gold-ink); flex: 1; }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+
+  .hand { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .card {
+    min-height: 82px; padding: 6px 4px; border-radius: 10px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 2px;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+  }
+  .card .dot {
+    width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+    font-family: var(--font-display); font-weight: 700; font-size: 15px; color: #14101c;
+  }
+  .card .type { font-size: 11px; color: var(--fg); }
+  .card .nums { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .card .tag { font-size: 10px; color: var(--gold); min-height: 1em; }
+  .card.sel { border-color: var(--gold); transform: translateY(-4px); }
+  .card:disabled { opacity: 0.38; cursor: default; }
+
+  .sheet {
+    position: fixed; inset: 0; z-index: 20; background: rgba(8, 6, 12, 0.94); overflow: auto;
+    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .sheet .inner { max-width: 520px; margin: 0 auto; display: grid; gap: 14px; }
+  .sheet h3 { margin: 0; font-family: var(--font-display); font-size: 16px; letter-spacing: 0.04em; }
+  .sheet ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; line-height: 1.45; color: var(--fg); }
+  .sheet .muted { color: var(--muted); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  label.chk { display: flex; gap: 8px; align-items: center; min-height: 36px; }
+
+  /* Menu : constitution du deck */
+  .menu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .menu-head .count { font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 600; }
+  .menu-head .count.ok { color: var(--good); }
+  .curve { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; height: 74px; align-items: end;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .curve .col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; height: 100%; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .curve .col i { display: block; width: 100%; max-width: 28px; border-radius: 3px 3px 0 0; background: var(--gold); min-height: 2px; }
+  .kpis { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+  .kpis b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cardlist { flex: 1; min-height: 0; overflow-y: auto; display: grid; gap: 6px; align-content: start; padding-right: 2px; }
+  .crow {
+    display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+    padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .crow.has { border-color: #4a4268; }
+  .crow .dot { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+    font-family: var(--font-display); font-weight: 700; font-size: 15px; color: #14101c; }
+  .crow .nm { font-weight: 600; }
+  .crow .sub { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .ctl { display: flex; align-items: center; gap: 6px; }
+  .ctl button { width: 36px; height: 36px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); font-size: 18px; line-height: 1; }
+  .ctl button:disabled { opacity: 0.35; cursor: default; }
+  .ctl output { min-width: 18px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .modehint { color: var(--muted); font-size: 12px; text-align: center; }
+  .btn.ghost { background: transparent; }
+</style>
+
+<div class="app" id="menuView">
+  <div class="menu-head">
+    <span class="round">Votre deck</span>
+    <span class="count" id="deckCount">0 / 20</span>
+  </div>
+  <div class="curve" id="curve" aria-label="Répartition des cartes du deck par coût"></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="cardlist" id="cardList"></div>
+  <div class="status" id="menuHint" role="status"></div>
+  <div class="actions">
+    <button class="btn" id="btnStarter">Deck de départ</button>
+    <button class="btn" id="btnRand">Aléatoire</button>
+    <button class="btn" id="btnClear">Vider</button>
+  </div>
+  <div class="actions">
+    <button class="btn primary" id="btnPlay">Lancer un combat</button>
+  </div>
+  <div class="modehint">Mode contre l'IA. Le mode contre des joueurs en ligne viendra plus tard.</div>
+</div>
+
+<div class="app" id="gameView" hidden>
+  <div class="top">
+    <div><span class="round" id="roundTxt">Manche 1</span><span class="phase" id="phaseTxt"></span></div>
+    <button class="iconbtn" id="btnInfo" aria-label="Règles et réglages">?</button>
+  </div>
+
+  <div class="stats">
+    <div class="side"><span class="who ally">Vous</span><span class="pips" id="pipsP"></span></div>
+    <div class="res">
+      <b id="resTxt">5 / 30</b>
+      <small id="resNext"></small>
+      <div class="bar"><i id="resBar"></i></div>
+    </div>
+    <div class="side enemy"><span class="pips" id="pipsE"></span><span class="who enemy">Ennemi</span></div>
+  </div>
+
+  <div class="board" id="board">
+    <canvas id="cv" aria-label="Plateau de 5 colonnes sur 10 rangées. Votre moitié est en bas."></canvas>
+    <div class="overlay" id="overlay" hidden>
+      <div class="box">
+        <h2 id="ovTitle"></h2>
+        <p id="ovText"></p>
+        <button class="btn primary" id="ovBtn">Continuer</button>
+        <button class="btn ghost" id="ovMenu" hidden>Retour au menu</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status" id="status" role="status"></div>
+
+  <div class="actions">
+    <button class="btn primary" id="btnReady">Prêt, lancer le combat</button>
+    <button class="btn" id="btnAuto" title="Pose automatiquement des cartes pour tester vite">Auto</button>
+    <button class="btn" id="btnSpeed" aria-label="Vitesse du combat">×1</button>
+  </div>
+
+  <div class="hand" id="hand"></div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="inner">
+    <div class="row" style="justify-content: space-between;">
+      <h3>Règles de ce prototype</h3>
+      <button class="btn" id="btnClose">Fermer</button>
+    </div>
+    <ul>
+      <li>Grille de 5 × 10. Vous posez dans la moitié du bas. La moitié du haut reste cachée jusqu'au combat.</li>
+      <li>Touchez une carte de la main, puis une case libre de votre moitié. Une carte posée sur une unité identique la fusionne (niveau 2 ou 3).</li>
+      <li>Touchez une de vos unités puis une autre case pour la déplacer ou l'échanger, sans coût.</li>
+      <li>Le combat est automatique. Chaque chibi attaque l'ennemi le plus proche. La manche se termine quand un camp n'a plus de chibi, ou au bout de 40 s : le camp avec le plus de chibis vivants gagne, puis le plus de PV restants.</li>
+      <li>Les unités mortes reviennent en pleine forme à la manche suivante. Le premier camp à 3 manches gagne.</li>
+      <li>Ressource : 5 à la manche 1, puis + (5 + (manche − 1)²) par manche, report des restes, plafond 30.</li>
+    </ul>
+    <h3>Hypothèses à confirmer</h3>
+    <ul class="muted">
+      <li>Le deck compte 20 cartes, 3 copies identiques au maximum. Une carte piochée est remplacée : on pioche toujours dans les 20 cartes.</li>
+      <li>Les 12 cartes sont des modèles sans nom : un coût de 0 à 5, en mêlée ou à distance.</li>
+      <li>Le deck de l'ennemi est tiré au hasard à chaque partie.</li>
+      <li>La main est complétée à 5 cartes au début de chaque manche.</li>
+      <li>Le plafond de 30 s'applique au stock de ressource.</li>
+      <li>Chaque niveau donne +10 % de PV et de dégâts. Les unités à distance ont 30 % de PV en moins.</li>
+      <li>L'ennemi est une IA simple qui pose des cartes au hasard avec la même courbe de ressource.</li>
+      <li>Une manche nulle ne donne aucun point.</li>
+    </ul>
+    <h3>Réglages de test</h3>
+    <label class="chk"><input type="checkbox" id="chkReveal"> Voir la moitié adverse pendant la préparation</label>
+    <div class="row">
+      <button class="btn" id="btnNew">Nouvelle partie</button>
+      <button class="btn" id="btnMenu">Retour au menu</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /*SIM_START*/
+  const COLS = 5, ROWS = 10, WIN_SCORE = 3, HAND_SIZE = 5, RES_CAP = 30, MAX_LEVEL = 3;
+  const PREP_TIME = 40, COMBAT_TIME = 40, ATK_INT = 1, MOVE_SPEED = 1.5, MAX_ROUNDS = 15, STEP = 1 / 30;
+  const BASE = [
+    { hp: 20, dmg: 2 }, { hp: 30, dmg: 3 }, { hp: 40, dmg: 5 },
+    { hp: 50, dmg: 6 }, { hp: 60, dmg: 8 }, { hp: 70, dmg: 10 }
+  ];
+  const RANGE = { M: 1.15, D: 3.2 };
+  const RANGED_HP = 0.7, LEVEL_BONUS = 0.1;
+  const ROWS_OF = { P: [5, 6, 7, 8, 9], E: [0, 1, 2, 3, 4] };
+  const PREF = {
+    P: { M: [5, 6, 7, 8, 9], D: [8, 9, 7, 6, 5] },
+    E: { M: [4, 3, 2, 1, 0], D: [1, 0, 2, 3, 4] }
+  };
+
+  function mulberry(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function gain(round) { return 5 + (round - 1) * (round - 1); }
+  function cardKey(c) { return c.cost + c.type; }
+  function statsFor(card, level) {
+    const b = BASE[card.cost];
+    const m = 1 + LEVEL_BONUS * (level - 1);
+    const hp = b.hp * (card.type === 'D' ? RANGED_HP : 1) * m;
+    return { hp: Math.round(hp), dmg: Math.round(b.dmg * m * 10) / 10 };
+  }
+  const CARDS = [];
+  for (let c = 0; c <= 5; c++) for (const t of ['M', 'D']) CARDS.push({ cost: c, type: t, key: c + t });
+  const DECK_SIZE = 20, MAX_COPIES = 3;
+  const STARTER = { '0M': 2, '0D': 1, '1M': 2, '1D': 2, '2M': 2, '2D': 2, '3M': 2, '3D': 2, '4M': 2, '4D': 1, '5M': 1, '5D': 1 };
+  function deckList(counts) {
+    const out = [];
+    for (const c of CARDS) for (let i = 0; i < (counts[c.key] || 0); i++) out.push({ cost: c.cost, type: c.type });
+    return out;
+  }
+  function randomCounts(rand) {
+    const counts = {};
+    let n = 0;
+    while (n < DECK_SIZE) {
+      const c = CARDS[Math.floor(rand() * CARDS.length)];
+      if ((counts[c.key] || 0) < MAX_COPIES) { counts[c.key] = (counts[c.key] || 0) + 1; n++; }
+    }
+    return counts;
+  }
+  // Pioche avec remise : le deck reste à 20 cartes, une carte tirée est remplacée.
+  function randCard(s, side) {
+    const d = s.deck[side];
+    const c = d[Math.floor(s.rand() * d.length)];
+    return { cost: c.cost, type: c.type };
+  }
+  function newGame(seed, counts) {
+    const rand = mulberry(seed);
+    return {
+      rand, deck: { P: deckList(counts || STARTER), E: deckList(randomCounts(rand)) },
+      round: 0, wins: { P: 0, E: 0 }, pool: { P: 0, E: 0 },
+      hand: { P: [], E: [] }, units: [], nextId: 1, phase: 'prep', time: 0, prepLeft: PREP_TIME,
+      over: false, champion: null, result: null, fx: [], fxOn: false
+    };
+  }
+  function unitAt(s, col, row) { return s.units.find(u => u.col === col && u.row === row) || null; }
+  function makeUnit(s, side, card, col, row) {
+    const st = statsFor(card, 1);
+    const u = {
+      id: s.nextId++, side, card, level: 1, col, row, x: col + 0.5, y: row + 0.5,
+      hp: st.hp, maxHp: st.hp, dmg: st.dmg, range: RANGE[card.type], cd: 0, alive: true, deadT: 0
+    };
+    s.units.push(u);
+    return u;
+  }
+  function canPlay(s, side, idx, col, row) {
+    const card = s.hand[side][idx];
+    if (!card) return { ok: false, reason: 'Aucune carte sélectionnée.' };
+    if (card.cost > s.pool[side]) return { ok: false, reason: 'Ressource insuffisante.' };
+    if (!ROWS_OF[side].includes(row) || col < 0 || col >= COLS) return { ok: false, reason: 'Posez la carte dans votre moitié du plateau.' };
+    const u = unitAt(s, col, row);
+    if (!u) return { ok: true, fuse: false };
+    if (u.side === side && cardKey(u.card) === cardKey(card)) {
+      if (u.level < MAX_LEVEL) return { ok: true, fuse: true };
+      return { ok: false, reason: 'Cette unité est déjà au niveau maximum.' };
+    }
+    return { ok: false, reason: 'Case occupée. Seule une copie identique peut la fusionner.' };
+  }
+  function play(s, side, idx, col, row) {
+    const r = canPlay(s, side, idx, col, row);
+    if (!r.ok) return r;
+    const card = s.hand[side][idx];
+    s.pool[side] -= card.cost;
+    s.hand[side].splice(idx, 1);
+    if (r.fuse) {
+      const u = unitAt(s, col, row);
+      u.level++;
+      const st = statsFor(u.card, u.level);
+      u.maxHp = st.hp; u.hp = st.hp; u.dmg = st.dmg;
+      r.level = u.level;
+    } else {
+      makeUnit(s, side, card, col, row);
+    }
+    return r;
+  }
+  function moveUnit(s, side, u, col, row) {
+    if (!ROWS_OF[side].includes(row) || col < 0 || col >= COLS) return false;
+    const o = unitAt(s, col, row);
+    if (o === u) return false;
+    if (o && o.side !== side) return false;
+    const pc = u.col, pr = u.row;
+    u.col = col; u.row = row; u.x = col + 0.5; u.y = row + 0.5;
+    if (o) { o.col = pc; o.row = pr; o.x = pc + 0.5; o.y = pr + 0.5; }
+    return true;
+  }
+  function emptyCells(s, side, rows) {
+    const out = [];
+    for (const row of rows) for (let col = 0; col < COLS; col++) if (!unitAt(s, col, row)) out.push([col, row]);
+    return out;
+  }
+  function aiPlay(s, side) {
+    for (let guard = 0; guard < 30; guard++) {
+      const h = s.hand[side];
+      const options = [];
+      h.forEach((c, i) => { if (c.cost <= s.pool[side]) options.push(i); });
+      if (!options.length) return;
+      // ordre : on tente d'abord la carte la plus chère une fois sur deux
+      options.sort(() => s.rand() - 0.5);
+      if (s.rand() < 0.5) options.sort((a, b) => h[b].cost - h[a].cost);
+      let done = false;
+      for (const idx of options) {
+        const card = h[idx];
+        const twin = s.units.find(u => u.side === side && cardKey(u.card) === cardKey(card) && u.level < MAX_LEVEL);
+        if (twin && s.rand() < 0.6) { play(s, side, idx, twin.col, twin.row); done = true; break; }
+        let cell = null;
+        for (const row of PREF[side][card.type]) {
+          const free = emptyCells(s, side, [row]);
+          if (free.length) { cell = free[Math.floor(s.rand() * free.length)]; break; }
+        }
+        if (cell) { play(s, side, idx, cell[0], cell[1]); done = true; break; }
+        if (twin) { play(s, side, idx, twin.col, twin.row); done = true; break; }
+      }
+      if (!done) return;
+    }
+  }
+  function startRound(s) {
+    s.round++;
+    s.phase = 'prep';
+    s.prepLeft = PREP_TIME;
+    s.result = null;
+    s.time = 0;
+    for (const side of ['P', 'E']) {
+      s.pool[side] = Math.min(RES_CAP, s.pool[side] + gain(s.round));
+      while (s.hand[side].length < HAND_SIZE) s.hand[side].push(randCard(s, side));
+    }
+    for (const u of s.units) {
+      u.alive = true; u.hp = u.maxHp; u.x = u.col + 0.5; u.y = u.row + 0.5;
+      u.cd = (u.id % 4) * 0.15; u.deadT = 0;
+    }
+    aiPlay(s, 'E');
+  }
+  function startCombat(s) {
+    s.phase = 'combat';
+    s.time = 0;
+    for (const u of s.units) { u.x = u.col + 0.5; u.y = u.row + 0.5; u.cd = (u.id % 4) * 0.15; }
+  }
+  function tally(s) {
+    const r = { aliveP: 0, aliveE: 0, hpP: 0, hpE: 0 };
+    for (const u of s.units) {
+      if (!u.alive) continue;
+      if (u.side === 'P') { r.aliveP++; r.hpP += u.hp; } else { r.aliveE++; r.hpE += u.hp; }
+    }
+    r.hpP = Math.round(r.hpP); r.hpE = Math.round(r.hpE);
+    return r;
+  }
+  function finishRound(s, timeout) {
+    const t = tally(s);
+    let winner = null;
+    if (t.aliveP !== t.aliveE) winner = t.aliveP > t.aliveE ? 'P' : 'E';
+    else if (t.hpP !== t.hpE) winner = t.hpP > t.hpE ? 'P' : 'E';
+    s.result = Object.assign({ winner, timeout, duration: s.time }, t);
+    if (winner) s.wins[winner]++;
+    s.phase = 'roundEnd';
+    if (s.wins.P >= WIN_SCORE || s.wins.E >= WIN_SCORE || s.round >= MAX_ROUNDS) {
+      s.over = true;
+      s.champion = s.wins.P > s.wins.E ? 'P' : s.wins.E > s.wins.P ? 'E' : null;
+    }
+  }
+  function stepCombat(s, dt) {
+    s.time += dt;
+    const alive = s.units.filter(u => u.alive);
+    const dmgs = [];
+    for (const u of alive) {
+      u.cd -= dt;
+      let t = null, bd = 1e9;
+      for (const o of alive) {
+        if (o.side === u.side) continue;
+        const d = Math.hypot(o.x - u.x, o.y - u.y);
+        if (d < bd) { bd = d; t = o; }
+      }
+      if (!t) continue;
+      if (bd <= u.range) {
+        if (u.cd <= 0) {
+          u.cd = ATK_INT;
+          dmgs.push([u, t]);
+        }
+      } else {
+        const stop = u.range * 0.9;
+        const step = Math.min(MOVE_SPEED * dt, bd - stop);
+        if (step > 0) { u.x += (t.x - u.x) / bd * step; u.y += (t.y - u.y) / bd * step; }
+      }
+    }
+    for (const [u, t] of dmgs) {
+      t.hp -= u.dmg;
+      if (s.fxOn) s.fx.push({ kind: 'hit', ranged: u.card.type === 'D', side: u.side, fx: u.x, fy: u.y, tx: t.x, ty: t.y, dmg: u.dmg, age: 0 });
+    }
+    for (const u of alive) if (u.hp <= 0 && u.alive) { u.hp = 0; u.alive = false; u.deadT = 0; }
+    const live = s.units.filter(u => u.alive);
+    for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const a = live[i], b = live[j];
+        let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+        if (d < 0.6) {
+          if (d < 1e-6) { dx = (i % 2 ? 1 : -1); dy = 0.01; d = Math.hypot(dx, dy); }
+          const push = (0.6 - d) / 2;
+          a.x -= dx / d * push; a.y -= dy / d * push;
+          b.x += dx / d * push; b.y += dy / d * push;
+        }
+      }
+    }
+    for (const u of live) {
+      u.x = Math.max(0.3, Math.min(COLS - 0.3, u.x));
+      u.y = Math.max(0.3, Math.min(ROWS - 0.3, u.y));
+    }
+    const t = tally(s);
+    if (t.aliveP === 0 || t.aliveE === 0) finishRound(s, false);
+    else if (s.time >= COMBAT_TIME) finishRound(s, true);
+  }
+  /*SIM_END*/
+
+  // ---------- Interface ----------
+  const COST_COL = ['#7b8494', '#68a77a', '#45a3ad', '#8f78d8', '#e0914a', '#e5c44d'];
+  const ALLY = '#5aa7ff', ENEMY = '#ea5b52', GOLD = '#dcae4a';
+  const FONT = 'Inter, system-ui, sans-serif';
+  const TAU = Math.PI * 2;
+
+  const $ = id => document.getElementById(id);
+  const cv = $('cv'), ctx = cv.getContext('2d');
+  let S, sel = null, speed = 1, reveal = false, acc = 0, cs = 40, fxs = [], msg = '';
+
+  // ---------- Menu et deck ----------
+  const STORE_KEY = 'chibi-deck-v1';
+  function validDeck(d) {
+    if (!d || typeof d !== 'object') return false;
+    let n = 0;
+    for (const k of Object.keys(d)) {
+      if (!CARDS.some(c => c.key === k)) return false;
+      const v = d[k];
+      if (!Number.isInteger(v) || v < 0 || v > MAX_COPIES) return false;
+      n += v;
+    }
+    return n <= DECK_SIZE;
+  }
+  function loadDeck() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (raw) { const d = JSON.parse(raw); if (validDeck(d)) return d; }
+    } catch (e) { /* stockage indisponible : on garde le deck de départ */ }
+    return Object.assign({}, STARTER);
+  }
+  function saveDeck() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(deck)); } catch (e) { /* ignoré */ }
+  }
+  let deck = loadDeck();
+  function deckSize() { return CARDS.reduce((a, c) => a + (deck[c.key] || 0), 0); }
+
+  function setCount(card, delta) {
+    const cur = deck[card.key] || 0;
+    const next = cur + delta;
+    if (next < 0 || next > MAX_COPIES) return;
+    if (delta > 0 && deckSize() >= DECK_SIZE) return;
+    if (next === 0) delete deck[card.key]; else deck[card.key] = next;
+    saveDeck();
+    renderMenu();
+  }
+
+  function renderMenu() {
+    const size = deckSize();
+    const cnt = $('deckCount');
+    cnt.textContent = size + ' / ' + DECK_SIZE;
+    cnt.className = 'count' + (size === DECK_SIZE ? ' ok' : '');
+
+    // courbe des coûts
+    const perCost = [0, 0, 0, 0, 0, 0];
+    let melee = 0, ranged = 0, totalCost = 0;
+    for (const c of CARDS) {
+      const n = deck[c.key] || 0;
+      perCost[c.cost] += n; totalCost += n * c.cost;
+      if (c.type === 'M') melee += n; else ranged += n;
+    }
+    const top = Math.max(6, ...perCost);
+    const curve = $('curve');
+    curve.textContent = '';
+    perCost.forEach((n, cost) => {
+      const col = document.createElement('div'); col.className = 'col';
+      const num = document.createElement('span'); num.textContent = n;
+      const bar = document.createElement('i'); bar.style.height = Math.round(n / top * 40) + 'px';
+      const lab = document.createElement('span'); lab.textContent = cost;
+      col.append(num, bar, lab);
+      curve.appendChild(col);
+    });
+    const avg = size ? (totalCost / size).toFixed(1).replace('.', ',') : '–';
+    $('kpis').innerHTML = '<span>Coût moyen <b>' + avg + '</b></span><span>Mêlée <b>' + melee +
+      '</b></span><span>Distance <b>' + ranged + '</b></span>';
+
+    // liste des cartes
+    const list = $('cardList');
+    const scroll = list.scrollTop;
+    list.textContent = '';
+    for (const c of CARDS) {
+      const n = deck[c.key] || 0;
+      const st = statsFor(c, 1);
+      const row = document.createElement('div');
+      row.className = 'crow' + (n ? ' has' : '');
+      const dot = document.createElement('span');
+      dot.className = 'dot'; dot.style.background = COST_COL[c.cost]; dot.textContent = c.cost;
+      const mid = document.createElement('div');
+      const nm = document.createElement('div'); nm.className = 'nm';
+      nm.textContent = (c.type === 'M' ? 'Mêlée' : 'Distance') + ' ' + c.cost;
+      const sub = document.createElement('div'); sub.className = 'sub';
+      sub.textContent = st.hp + ' PV · ' + st.dmg + ' dégâts · portée ' + (c.type === 'M' ? 'courte' : 'longue');
+      mid.append(nm, sub);
+      const ctl = document.createElement('div'); ctl.className = 'ctl';
+      const minus = document.createElement('button');
+      minus.textContent = '−'; minus.disabled = n === 0;
+      minus.setAttribute('aria-label', 'Retirer une copie de ' + nm.textContent);
+      minus.addEventListener('click', () => setCount(c, -1));
+      const out = document.createElement('output'); out.textContent = n;
+      const plus = document.createElement('button');
+      plus.textContent = '+'; plus.disabled = n >= MAX_COPIES || size >= DECK_SIZE;
+      plus.setAttribute('aria-label', 'Ajouter une copie de ' + nm.textContent);
+      plus.addEventListener('click', () => setCount(c, 1));
+      ctl.append(minus, out, plus);
+      row.append(dot, mid, ctl);
+      list.appendChild(row);
+    }
+    list.scrollTop = scroll;
+
+    $('btnPlay').disabled = size !== DECK_SIZE;
+    $('menuHint').textContent = size < DECK_SIZE
+      ? 'Il manque ' + (DECK_SIZE - size) + ' carte' + (DECK_SIZE - size > 1 ? 's' : '') + '. Maximum ' + MAX_COPIES + ' copies de chaque carte.'
+      : 'Deck complet. Vous pouvez lancer un combat.';
+  }
+
+  function showMenu() {
+    S.phase = 'menu';
+    $('gameView').hidden = true;
+    $('overlay').hidden = true;
+    $('sheet').hidden = true;
+    $('menuView').hidden = false;
+    renderMenu();
+  }
+  function showGame() {
+    $('menuView').hidden = true;
+    $('gameView').hidden = false;
+    resize();
+    begin();
+  }
+
+  $('btnStarter').addEventListener('click', () => { deck = Object.assign({}, STARTER); saveDeck(); renderMenu(); });
+  $('btnClear').addEventListener('click', () => { deck = {}; saveDeck(); renderMenu(); });
+  $('btnRand').addEventListener('click', () => { deck = randomCounts(Math.random); saveDeck(); renderMenu(); });
+  $('btnPlay').addEventListener('click', () => { if (deckSize() === DECK_SIZE) showGame(); });
+  $('btnMenu').addEventListener('click', showMenu);
+  $('ovMenu').addEventListener('click', showMenu);
+
+  // ---------- Partie ----------
+  function newSeed() { return (Math.random() * 2147483647) | 0; }
+  function begin() {
+    S = newGame(newSeed(), deck);
+    S.fxOn = true;
+    fxs = []; sel = null; acc = 0;
+    startRound(S);
+    $('overlay').hidden = true;
+    msg = 'Manche 1 : touchez une carte puis une case de votre moitié. La moitié adverse est cachée.';
+    renderHand(); updateHud();
+  }
+
+  function say(t) { msg = t; $('status').textContent = t; }
+
+  function resize() {
+    const wrap = $('board');
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    const size = Math.max(120, Math.min(w, h / 2));
+    const dpr = window.devicePixelRatio || 1;
+    cv.style.width = size + 'px';
+    cv.style.height = size * 2 + 'px';
+    cv.width = Math.round(size * dpr);
+    cv.height = Math.round(size * 2 * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cs = size / COLS;
+  }
+
+  function renderHand() {
+    const el = $('hand');
+    el.textContent = '';
+    S.hand.P.forEach((c, i) => {
+      const b = document.createElement('button');
+      b.className = 'card' + (sel && sel.kind === 'hand' && sel.idx === i ? ' sel' : '');
+      const st = statsFor(c, 1);
+      const twin = S.units.find(u => u.side === 'P' && cardKey(u.card) === cardKey(c) && u.level < MAX_LEVEL);
+      b.disabled = S.phase !== 'prep' || c.cost > S.pool.P;
+      b.setAttribute('aria-label', 'Carte coût ' + c.cost + ', ' + (c.type === 'M' ? 'mêlée' : 'distance') + ', ' + st.hp + ' PV, ' + st.dmg + ' dégâts');
+      const dot = document.createElement('span');
+      dot.className = 'dot'; dot.style.background = COST_COL[c.cost]; dot.textContent = c.cost;
+      const ty = document.createElement('span');
+      ty.className = 'type'; ty.textContent = c.type === 'M' ? 'Mêlée' : 'Distance';
+      const nums = document.createElement('span');
+      nums.className = 'nums'; nums.textContent = st.hp + ' PV · ' + st.dmg + ' dgt';
+      const tag = document.createElement('span');
+      tag.className = 'tag'; tag.textContent = twin ? 'Fusion' : '';
+      b.append(dot, ty, nums, tag);
+      b.addEventListener('click', () => {
+        if (S.phase !== 'prep') return;
+        if (c.cost > S.pool.P) { say('Ressource insuffisante pour cette carte.'); return; }
+        sel = (sel && sel.kind === 'hand' && sel.idx === i) ? null : { kind: 'hand', idx: i };
+        say(sel ? 'Touchez une case libre de votre moitié (ou une unité identique pour la fusionner).' : 'Carte désélectionnée.');
+        renderHand();
+      });
+      el.appendChild(b);
+    });
+  }
+
+  function pips(id, n, cls) {
+    const el = $(id);
+    el.textContent = '';
+    for (let i = 0; i < WIN_SCORE; i++) {
+      const p = document.createElement('span');
+      p.className = 'pip ' + cls + (i < n ? ' on' : '');
+      el.appendChild(p);
+    }
+  }
+
+  function updateHud() {
+    $('roundTxt').textContent = 'Manche ' + S.round;
+    pips('pipsP', S.wins.P, 'ally');
+    pips('pipsE', S.wins.E, 'enemy');
+    $('resTxt').textContent = S.pool.P + ' / ' + RES_CAP;
+    $('resBar').style.width = (S.pool.P / RES_CAP * 100) + '%';
+    const next = Math.min(RES_CAP, S.pool.P + gain(S.round + 1));
+    $('resNext').textContent = 'manche suivante : ' + (next >= RES_CAP ? 'plafond 30' : next);
+    $('btnReady').disabled = S.phase !== 'prep';
+    $('btnAuto').disabled = S.phase !== 'prep';
+    $('status').textContent = msg;
+  }
+
+  function updateTimers() {
+    let t = '';
+    if (S.phase === 'prep') t = 'Préparation ' + Math.max(0, Math.ceil(S.prepLeft)) + ' s';
+    else if (S.phase === 'combat') {
+      const t2 = tally(S);
+      t = 'Combat ' + Math.max(0, Math.ceil(COMBAT_TIME - S.time)) + ' s · ' + t2.aliveP + ' contre ' + t2.aliveE;
+    } else t = 'Manche terminée';
+    if ($('phaseTxt').textContent !== t) $('phaseTxt').textContent = t;
+  }
+
+  function launch() {
+    if (S.phase !== 'prep') return;
+    sel = null;
+    startCombat(S);
+    acc = 0;
+    say('Combat en cours. Chaque chibi attaque l\'ennemi le plus proche.');
+    renderHand(); updateHud();
+  }
+
+  function onRoundEnd() {
+    const r = S.result;
+    let title, text;
+    if (S.over) {
+      title = S.champion === 'P' ? 'Victoire' : S.champion === 'E' ? 'Défaite' : 'Partie nulle';
+      text = 'Score ' + S.wins.P + ' – ' + S.wins.E + ' après ' + S.round + ' manches.';
+      $('ovBtn').textContent = 'Rejouer';
+    } else {
+      title = r.winner === 'P' ? 'Manche gagnée' : r.winner === 'E' ? 'Manche perdue' : 'Manche nulle';
+      text = 'Chibis vivants : ' + r.aliveP + ' contre ' + r.aliveE + (r.timeout ? ' (temps écoulé)' : '') +
+        '. PV restants : ' + r.hpP + ' contre ' + r.hpE + '.';
+      $('ovBtn').textContent = 'Manche suivante';
+    }
+    $('ovTitle').textContent = title;
+    $('ovText').textContent = text;
+    $('ovMenu').hidden = !S.over;
+    $('overlay').hidden = false;
+    renderHand(); updateHud();
+  }
+
+  $('ovBtn').addEventListener('click', () => {
+    if (S.over) { begin(); return; }
+    startRound(S);
+    sel = null; fxs = [];
+    $('overlay').hidden = true;
+    say('Manche ' + S.round + ' : ressource ' + S.pool.P + '. Posez vos cartes.');
+    renderHand(); updateHud();
+  });
+  $('btnReady').addEventListener('click', launch);
+  $('btnAuto').addEventListener('click', () => {
+    if (S.phase !== 'prep') return;
+    aiPlay(S, 'P'); sel = null;
+    say('Cartes posées automatiquement. Vous pouvez encore déplacer vos unités.');
+    renderHand(); updateHud();
+  });
+  $('btnSpeed').addEventListener('click', () => {
+    speed = speed === 1 ? 2 : speed === 2 ? 4 : 1;
+    $('btnSpeed').textContent = '×' + speed;
+  });
+  $('btnInfo').addEventListener('click', () => { $('sheet').hidden = false; });
+  $('btnClose').addEventListener('click', () => { $('sheet').hidden = true; });
+  $('btnNew').addEventListener('click', () => { $('sheet').hidden = true; begin(); });
+  $('chkReveal').addEventListener('change', e => { reveal = e.target.checked; });
+
+  cv.addEventListener('pointerdown', e => {
+    if (S.phase !== 'prep') return;
+    const rect = cv.getBoundingClientRect();
+    const col = Math.floor((e.clientX - rect.left) / rect.width * COLS);
+    const row = Math.floor((e.clientY - rect.top) / rect.height * ROWS);
+    if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+    if (sel && sel.kind === 'hand') {
+      const r = play(S, 'P', sel.idx, col, row);
+      if (!r.ok) { say(r.reason); return; }
+      sel = null;
+      say(r.fuse ? 'Fusion : l\'unité passe au niveau ' + r.level + '.' : 'Unité posée.');
+      renderHand(); updateHud();
+    } else if (sel && sel.kind === 'unit') {
+      const u = S.units.find(x => x.id === sel.id);
+      if (u && moveUnit(S, 'P', u, col, row)) { sel = null; say('Unité déplacée.'); }
+      else if (u && u.col === col && u.row === row) { sel = null; say('Sélection annulée.'); }
+      else say('Déplacement impossible : choisissez une case de votre moitié.');
+    } else {
+      const u = unitAt(S, col, row);
+      if (u && u.side === 'P') { sel = { kind: 'unit', id: u.id }; say('Touchez une case pour déplacer ou échanger cette unité.'); }
+      else sel = null;
+    }
+  });
+
+  // ---------- Dessin ----------
+  function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); }
+
+  function drawUnit(u, alpha, selected, showHp) {
+    const cx = u.x * cs, cy = u.y * cs, r = cs * 0.33;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.9, r * 0.9, r * 0.28, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = COST_COL[u.card.cost];
+    circle(cx, cy, r); ctx.fill();
+    ctx.lineWidth = Math.max(2.5, cs * 0.05);
+    ctx.strokeStyle = u.side === 'P' ? ALLY : ENEMY;
+    circle(cx, cy, r); ctx.stroke();
+    if (selected) {
+      ctx.strokeStyle = GOLD; ctx.lineWidth = 2;
+      circle(cx, cy, r + cs * 0.07); ctx.stroke();
+    }
+    ctx.fillStyle = '#14101c';
+    ctx.font = '700 ' + Math.round(r * 0.95) + 'px ' + FONT;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(u.card.cost), cx, cy + 1);
+    if (u.card.type === 'D') {
+      const dx = cx + r * 0.78, dy = cy - r * 0.78, k = r * 0.28;
+      ctx.fillStyle = '#ece6d6';
+      ctx.beginPath(); ctx.moveTo(dx, dy - k); ctx.lineTo(dx + k, dy); ctx.lineTo(dx, dy + k); ctx.lineTo(dx - k, dy); ctx.closePath(); ctx.fill();
+    }
+    for (let i = 0; i < u.level; i++) {
+      ctx.fillStyle = GOLD;
+      circle(cx + (i - (u.level - 1) / 2) * r * 0.5, cy + r * 1.18, r * 0.14); ctx.fill();
+    }
+    if (showHp) {
+      const bw = r * 2, bh = Math.max(3, cs * 0.05), bx = cx - r, by = cy - r - bh - cs * 0.06;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(bx, by, bw, bh);
+      const f = Math.max(0, u.hp / u.maxHp);
+      ctx.fillStyle = f > 0.5 ? '#6fbf86' : f > 0.25 ? '#e0b24a' : '#ea5b52';
+      ctx.fillRect(bx, by, bw * f, bh);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    const W = COLS * cs, H = ROWS * cs;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0e0c15'; ctx.fillRect(0, 0, W, H);
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const enemySide = r < 5;
+        const odd = (r + c) % 2;
+        ctx.fillStyle = enemySide
+          ? (odd ? 'rgba(234,91,82,0.07)' : 'rgba(234,91,82,0.035)')
+          : (odd ? 'rgba(90,167,255,0.08)' : 'rgba(90,167,255,0.04)');
+        ctx.fillRect(c * cs, r * cs, cs, cs);
+      }
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let c = 1; c < COLS; c++) { ctx.moveTo(c * cs, 0); ctx.lineTo(c * cs, H); }
+    for (let r = 1; r < ROWS; r++) { ctx.moveTo(0, r * cs); ctx.lineTo(W, r * cs); }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(220,174,74,0.55)'; ctx.setLineDash([6, 6]); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke(); ctx.setLineDash([]);
+
+    const prep = S.phase === 'prep';
+    if (prep && sel && sel.kind === 'hand') {
+      ctx.fillStyle = 'rgba(220,174,74,0.35)';
+      for (let r = 5; r < 10; r++) for (let c = 0; c < COLS; c++) {
+        if (!unitAt(S, c, r)) { circle((c + 0.5) * cs, (r + 0.5) * cs, cs * 0.08); ctx.fill(); }
+      }
+    }
+
+    const hide = prep && !reveal;
+    const inCombat = S.phase !== 'prep';
+    const ordered = S.units.slice().sort((a, b) => a.y - b.y);
+    for (const u of ordered) {
+      if (u.side === 'E' && hide) continue;
+      if (!u.alive) {
+        if (u.deadT < 0.4) drawUnit(u, 0.6 * (1 - u.deadT / 0.4), false, false);
+        continue;
+      }
+      drawUnit(u, 1, sel && sel.kind === 'unit' && sel.id === u.id, inCombat || u.hp < u.maxHp);
+    }
+
+    if (hide) {
+      ctx.fillStyle = 'rgba(10,8,16,0.9)'; ctx.fillRect(0, 0, W, H / 2);
+      ctx.strokeStyle = 'rgba(234,91,82,0.12)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = -H; i < W + H; i += cs * 0.5) { ctx.moveTo(i, 0); ctx.lineTo(i + H / 2, H / 2); }
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(236,230,214,0.7)';
+      ctx.font = '600 ' + Math.round(cs * 0.22) + 'px ' + FONT;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('Zone adverse cachée', W / 2, H / 4);
+    }
+
+    for (const f of fxs) {
+      const a = f.age;
+      if (f.ranged) {
+        const k = 1 - a / 0.18;
+        if (k > 0) {
+          ctx.globalAlpha = k;
+          ctx.strokeStyle = f.side === 'P' ? ALLY : ENEMY; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(f.fx * cs, f.fy * cs); ctx.lineTo(f.tx * cs, f.ty * cs); ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      } else {
+        const k = 1 - a / 0.25;
+        if (k > 0) {
+          ctx.globalAlpha = k;
+          ctx.strokeStyle = '#ece6d6'; ctx.lineWidth = 2;
+          circle(f.tx * cs, f.ty * cs, cs * (0.2 + (1 - k) * 0.25)); ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
+      const k2 = 1 - a / 0.7;
+      if (k2 > 0) {
+        ctx.globalAlpha = k2;
+        ctx.fillStyle = '#ece6d6';
+        ctx.font = '700 ' + Math.round(cs * 0.2) + 'px ' + FONT;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(f.dmg), f.tx * cs, f.ty * cs - cs * 0.35 - a * cs * 0.4);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  // ---------- Boucle ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    if (S.phase === 'menu') { requestAnimationFrame(frame); return; }
+    if (S.phase === 'prep') {
+      S.prepLeft -= dt;
+      if (S.prepLeft <= 0) launch();
+    } else if (S.phase === 'combat') {
+      acc += dt * speed;
+      let n = 0;
+      while (acc >= STEP && S.phase === 'combat' && n < 16) { stepCombat(S, STEP); acc -= STEP; n++; }
+      if (S.phase === 'roundEnd') onRoundEnd();
+    }
+    while (S.fx.length) fxs.push(S.fx.shift());
+    for (const f of fxs) f.age += dt;
+    fxs = fxs.filter(f => f.age < 0.8);
+    for (const u of S.units) if (!u.alive) u.deadT += dt;
+    draw();
+    updateTimers();
+    requestAnimationFrame(frame);
+  }
+
+  new ResizeObserver(resize).observe($('board'));
+  window.addEventListener('resize', resize);
+  S = newGame(newSeed(), deck);
+  S.phase = 'menu';
+  renderMenu();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
